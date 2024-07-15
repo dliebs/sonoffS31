@@ -1,12 +1,6 @@
-/*-----     Custom Sonoff S31 Firmware v2b     -----*/
-/*-----              Slave Device              -----*/
+/*-----     Custom Sonoff S31 Firmware v4      -----*/
+/*-----             Unified Device             -----*/
 /*-----  https://github.com/dervomsee/CSE7766  -----*/
-
-/*-----
-To Do:
-  NTP
-  Scheduler
------*/
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -27,18 +21,19 @@ CSE7766 theCSE7766;
 
 #define WiFiHostname "S31B"
 
+/*-------- Program Variables ----------*/
+
 // GPIO
 #define RELAY_PIN       12
 #define LED             13
-#define BUTTON			 0
-#define CSE7766TX		 1
-#define CSE7766RX		 3
-
-/*-------- Program Variables ----------*/
+#define BUTTON           0
+#define CSE7766TX        1
+#define CSE7766RX        3
 
 const char * ssid = STASSID;
 const char * pass = STAPSK;
 ESP8266WebServer server(80);
+bool buttonState = false;
 
 /*-------- Main Functions ----------*/
 
@@ -50,21 +45,20 @@ void setup() {
   // Bring relay pin LOW to turn off load
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
+
   // Bring LED pin LOW to turn on
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
 
-  // Activate the button as an interrupt - CAUSES ESP TO FAIL BOOT
- //  pinMode(BUTTON, INPUT_PULLUP);
- // attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPressed, RISING);
+  // Activate the button as an interrupt - ESP WILL FAIL BOOT IF SET TO INPUT_PULLUP
+  pinMode(BUTTON, INPUT);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonWatcher, HIGH);
 
   // Connect to WiFi
   connectWiFi();
 
   // Start HTML Server
-  Serial.print("HTTP server starting... ");
   serverSetup();
-  Serial.println("Done.");
 
   //Initialize Arduino OTA
   ArduinoOTA.onStart([]() {
@@ -74,7 +68,6 @@ void setup() {
     } else { // U_FS
       type = "filesystem";
     }
-
     // NOTE: if updating FS this would be the place to unmount FS using FS.end()
     Serial.println("Start updating " + type);
   });
@@ -100,7 +93,6 @@ void setup() {
   });
   ArduinoOTA.setHostname(WiFiHostname);
   ArduinoOTA.setPassword(STAPSK);
-
   ArduinoOTA.begin();
 }
 
@@ -109,6 +101,12 @@ void loop() {
   theCSE7766.handle();
   if (theCSE7766.getCurrent() > 15) {
   	digitalWrite(RELAY_PIN, LOW);
+  }
+
+  // Button Trigger
+  if (buttonState) {
+    toggle();
+    buttonState = false;
   }
 
   // Webserver
@@ -123,32 +121,24 @@ void loop() {
 
 /*-------- Button Interrupt ----------*/
 
-void buttonPressed() {
-  toggle();
+ICACHE_RAM_ATTR void buttonWatcher() {
+  buttonState = !buttonState;
 }
 
 /*-------- WiFi Code ----------*/
 
 void connectWiFi() {
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
   WiFi.mode(WIFI_STA);
   WiFi.hostname(WiFiHostname);
   WiFi.begin(ssid, pass);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  unsigned long startTime = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startTime) <= 10000) // Timeout WiFi connection attempt after 10 sec
+  {
     delay(500);
-    Serial.print(".");
-	digitalWrite(LED, !digitalRead(LED));
+    digitalWrite(LED, !digitalRead(LED));
   }
-  Serial.println("");
   digitalWrite(LED, HIGH);
-
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
 }
 
 /*-------- Server Calls ----------*/
@@ -166,29 +156,31 @@ String webpage =   ""
                    "<!DOCTYPE html>"
                    "<html>"
                    "<head>"
-                   "<title>Sonoff S31 B</title>"
-                   "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
-                   "<meta name=\"viewport\" content=\"width=device-width\" />"
-                   "<meta http-equiv=\"refresh\" content=\"10\" />"
-                   "<style>"
-                   "body {background-color: #000; color: #a40; font-family: Helvetica;}"
-                   "input.colorButton { width: 100%; height: 2.5em; padding: 0; font-size: 2em; background-color: #222; border-color: #222; color: #a40; font-family: Helvetica;} "
-                   "</style>"
+                     "<title>Sonoff %deviceName%</title>"
+                     "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
+                     "<meta name=\"viewport\" content=\"width=device-width\" />"
+                     "<meta http-equiv=\"refresh\" content=\"10\" />"
+                     "<style>"
+                       "body {background-color: #000; color: #a40; font-family: Helvetica;}"
+                       "input.colorButton { width: 100%; height: 2.5em; padding: 0; font-size: 2em; background-color: #222; border-color: #222; color: #a40; font-family: Helvetica;} "
+                     "</style>"
                    "</head>"
                    "<body>"
-                   "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
-                   "<p align=\"center\">Voltage: %voltageStub% V<br>"
-				   "Current: %currentStub% A<br>"
-				   "Active Power: %apowerStub% W<br>"
-				   "Apparent Power: %appowerStub% VA<br>"
-				   "Reactive Power: %rpowerStub% VAR<br>"
-				   "Power Factor: %pfactorStub% %<br>"
-				   "Energy: %energyStub% Ws</p>"
+                     "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
+                     "<p align=\"center\">Voltage: %voltageStub% V<br>"
+                     "Current: %currentStub% A<br>"
+                     "Active Power: %apowerStub% W<br>"
+                     "Apparent Power: %appowerStub% VA<br>"
+                     "Reactive Power: %rpowerStub% VAR<br>"
+                     "Power Factor: %pfactorStub% %<br>"
+                     "Energy: %energyStub% Ws</p>"
                    "</body>"
                    "</html>";
 
 void handleRoot() {
   String deliveredHTML = webpage;
+
+  deliveredHTML.replace("%deviceName%", WiFiHostname);
 
   if (digitalRead(RELAY_PIN) == HIGH) {
     deliveredHTML.replace("%toggleStub%", "Off");
@@ -241,6 +233,7 @@ void turnOff() {
 }
 
 void redirect() {
+  yield();
   server.sendHeader("Location", "/");
   server.send(303);
 }
