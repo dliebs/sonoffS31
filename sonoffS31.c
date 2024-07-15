@@ -1,6 +1,15 @@
-/*-----     Custom Sonoff S31 Firmware v4      -----*/
-/*-----             Unified Device             -----*/
-/*-----  https://github.com/dervomsee/CSE7766  -----*/
+//
+// Custom Sonoff S31 Firmware v5
+//
+// Changes from v4
+//   Arduino OTA in separate function
+//   Center Text on Webpage
+//
+// This version was deployed 2023.04.18
+//
+// Credit to:
+// https://github.com/dervomsee/CSE7766
+//
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -61,46 +70,14 @@ void setup() {
   serverSetup();
 
   //Initialize Arduino OTA
-  ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    } else { // U_FS
-      type = "filesystem";
-    }
-    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-    Serial.println("Start updating " + type);
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
-  });
-  ArduinoOTA.setHostname(WiFiHostname);
-  ArduinoOTA.setPassword(STAPSK);
-  ArduinoOTA.begin();
+  initializeOTA();
 }
 
 void loop() {
   // Safety Shutoff at 15A
   theCSE7766.handle();
   if (theCSE7766.getCurrent() > 15) {
-  	digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(RELAY_PIN, LOW);
   }
 
   // Button Trigger
@@ -141,6 +118,43 @@ void connectWiFi() {
   digitalWrite(LED, HIGH);
 }
 
+void initializeOTA() {
+  //Initialize Arduino OTA
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_FS
+      type = "filesystem";
+    }
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    Serial.println("Start updating " + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+  ArduinoOTA.setHostname(WiFiHostname);
+  ArduinoOTA.setPassword(STAPSK);
+  ArduinoOTA.begin();
+}
+
 /*-------- Server Calls ----------*/
 
 void serverSetup() {
@@ -152,30 +166,37 @@ void serverSetup() {
   server.begin();
 }
 
-String webpage =   ""
-                   "<!DOCTYPE html>"
-                   "<html>"
-                   "<head>"
-                     "<title>Sonoff %deviceName%</title>"
-                     "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
-                     "<meta name=\"viewport\" content=\"width=device-width\" />"
-                     "<meta http-equiv=\"refresh\" content=\"10\" />"
-                     "<style>"
-                       "body {background-color: #000; color: #a40; font-family: Helvetica;}"
-                       "input.colorButton { width: 100%; height: 2.5em; padding: 0; font-size: 2em; background-color: #222; border-color: #222; color: #a40; font-family: Helvetica;} "
-                     "</style>"
-                   "</head>"
-                   "<body>"
-                     "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
-                     "<p align=\"center\">Voltage: %voltageStub% V<br>"
-                     "Current: %currentStub% A<br>"
-                     "Active Power: %apowerStub% W<br>"
-                     "Apparent Power: %appowerStub% VA<br>"
-                     "Reactive Power: %rpowerStub% VAR<br>"
-                     "Power Factor: %pfactorStub% %<br>"
-                     "Energy: %energyStub% Ws</p>"
-                   "</body>"
-                   "</html>";
+String webpage = ""
+                 "<!DOCTYPE html>"
+                 "<html>"
+                 "<head>"
+                   "<title>Sonoff %deviceName%</title>"
+                   "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
+                   "<meta name=\"viewport\" content=\"width=device-width\" />"
+                   "<meta http-equiv=\"refresh\" content=\"10\" />"
+                   "<style>"
+                     "body {background-color: #000; color: #a40; font-family: Helvetica;}"
+                     "p { font-size: 1.25em; }"
+                     "input.colorButton { width: 100%; height: 2.5em; padding: 0; font-size: 2em; background-color: #222; border-color: #222; color: #a40; font-family: Helvetica;} "
+                     ".container { display: flex; align-items: center; justify-content: center; height: 100%; border: 0px; }"
+                     ".centered-element { margin: 0; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95%; }"
+                   "</style>"
+                 "</head>"
+                 "<body>"
+                   "<div class=\"container\">"
+                     "<div class=\"centered-element\">"
+                       "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
+                       "<p align=\"center\">Voltage: %voltageStub% V<br>"
+                       "Current: %currentStub% A<br>"
+                       "Active Power: %apowerStub% W<br>"
+                       "Apparent Power: %appowerStub% VA<br>"
+                       "Reactive Power: %rpowerStub% VAR<br>"
+                       "Power Factor: %pfactorStub% %<br>"
+                       "Energy: %energyStub% Ws</p>"
+                     "</div>"
+                   "</div>"
+                 "</body>"
+                 "</html>";
 
 void handleRoot() {
   String deliveredHTML = webpage;
