@@ -1,6 +1,6 @@
-/*-----      Custom Sonoff S31 Firmware v1      -----*/
-/*-----   https://github.com/dervomsee/CSE7766  -----*/
-/*-----          Now using GET Requests         -----*/
+/*-----     Custom Sonoff S31 Firmware v1b     -----*/
+/*-----              Slave Device              -----*/
+/*-----  https://github.com/dervomsee/CSE7766  -----*/
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -16,7 +16,7 @@ CSE7766 theCSE7766;
 #define STAPSK  "Your-WiFi-Pass"  // Password
 #endif
 
-#define WiFiHostname "S31A"
+#define WiFiHostname "S31B"
 
 // GPIO
 #define RELAY_PIN       12
@@ -38,6 +38,13 @@ void setup() {
   theCSE7766.setRX(1);
   theCSE7766.begin(); // will initialize serial to 4800 bps
 
+  // Bring relay pin HIGH to turn on load
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+  //  Bring LED HIGH to turn off
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
+
   // Connect to WiFi
   connectWiFi();
 
@@ -45,13 +52,6 @@ void setup() {
   Serial.print("HTTP server starting... ");
   serverSetup();
   Serial.println("Done.");
-
-  // Close the relay to switch on the load
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);
-  // Initialise digital pin LED as an output and turn off
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, HIGH);
 }
 
 void loop() {
@@ -76,8 +76,10 @@ void connectWiFi() {
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+	digitalWrite(LED, !digitalRead(LED));
   }
   Serial.println("");
+  digitalWrite(LED, HIGH);
 
   Serial.println("WiFi connected");
   Serial.print("IP address: ");
@@ -97,7 +99,7 @@ String webpage =   ""
                    "<!DOCTYPE html>"
                    "<html>"
                    "<head>"
-                   "<title>Sonoff S31 A</title>"
+                   "<title>Sonoff S31 B</title>"
                    "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
                    "<meta name=\"viewport\" content=\"width=device-width\" />"
                    "<style>"
@@ -108,12 +110,12 @@ String webpage =   ""
                    "</head>"
                    "<body>"
                    "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
-                   "<p align=\"center\">Voltage: %voltageStub% V</p>"
-				   "Current: %currentStub% A</ br>"
-				   "Active Power: %apowerStub% W</ br>"
-				   "Apparent Power: %appowerStub% VA</ br>"
-				   "Reactive Power: %rpowerStub% VAR</ br>"
-				   "Power Factor: %pfactorStub% %</ br>"
+                   "<p align=\"center\">Voltage: %voltageStub% V<br>"
+				   "Current: %currentStub% A<br>"
+				   "Active Power: %apowerStub% W<br>"
+				   "Apparent Power: %appowerStub% VA<br>"
+				   "Reactive Power: %rpowerStub% VAR<br>"
+				   "Power Factor: %pfactorStub% %<br>"
 				   "Energy: %energyStub% Ws</p>"
                    "</body>"
                    "</html>";
