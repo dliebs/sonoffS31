@@ -1,5 +1,6 @@
-/*-----      Custom Sonoff S31 Firmware v0      -----*/
-/*-----  https://github.com/dervomsee/CSE7766  -----*/
+/*-----      Custom Sonoff S31 Firmware v1      -----*/
+/*-----   https://github.com/dervomsee/CSE7766  -----*/
+/*-----          Now using GET Requests         -----*/
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -87,7 +88,7 @@ void connectWiFi() {
 
 void serverSetup() {
   server.on("/", handleRoot);
-  server.on("/toggle", HTTP_POST, toggle);
+  server.on("/toggle", HTTP_GET, toggle);
   server.onNotFound(handleNotFound);
   server.begin();
 }
@@ -106,14 +107,14 @@ String webpage =   ""
                    "</style>"
                    "</head>"
                    "<body>"
-                   "<form action=\"/toggle\" method=\"POST\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
+                   "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
                    "<p align=\"center\">Voltage: %voltageStub% V</p>"
-				   "<p align=\"center\">Current: %currentStub% A</p>"
-				   "<p align=\"center\">Active Power: %apowerStub% W</p>"
-				   "<p align=\"center\">Apparent Power: %appowerStub% VA</p>"
-				   "<p align=\"center\">Reactive Power: %rpowerStub% VAR</p>"
-				   "<p align=\"center\">Power Factor: %pfactorStub% %</p>"
-				   "<p align=\"center\">Energy: %energyStub% Ws</p>"
+				   "Current: %currentStub% A</ br>"
+				   "Active Power: %apowerStub% W</ br>"
+				   "Apparent Power: %appowerStub% VA</ br>"
+				   "Reactive Power: %rpowerStub% VAR</ br>"
+				   "Power Factor: %pfactorStub% %</ br>"
+				   "Energy: %energyStub% Ws</p>"
                    "</body>"
                    "</html>";
 
