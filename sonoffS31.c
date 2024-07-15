@@ -1,14 +1,16 @@
 //
-// Custom Sonoff S31 Firmware v7
-//  Cost estimates, usage in kWh
 //
-// Changes from v6
-//   Added /status for feedback
+//  Sonoff S31 Firmware - Version 1.0.8
+//  Based on espHTTPServer
+//  This version was not deployed [2024.01.17]
 //
-// This version deployed 2024.01.17
+//  Sonoff S31 Generic ESP8266 Module Based
+//    Power Monitoring + Reporting
 //
-// Credit to:
-// https://github.com/dervomsee/CSE7766
+//  Changes From Previous Version
+//    Comments, cleanup
+//    /powerStatus page
+//
 //
 
 #include <espHTTPUtils.h>
@@ -39,9 +41,12 @@ CSE7766 theCSE7766;
 #define FONT "Helvetica"
 #define TABHEIGHTEM "47"
 
+// Cost of energy - $0.16/kWh
+float costOfEnergy = 0.16;
+
 /*-------- Program Variables ----------*/
 
-// GPIO
+// GPIO - DO NOT CHANGE
 #define RELAY_PIN       12
 #define LED             13
 #define BUTTON           0
@@ -110,6 +115,7 @@ void serverSetup() {
   server.on("/on", HTTP_GET, on);
   server.on("/off", HTTP_GET, off);
   server.on("/status", HTTP_GET, status);
+  server.on("/powerStatus", HTTP_GET, powerStatus);
   server.onNotFound(handleNotFound);
   server.begin();
 }
@@ -149,7 +155,7 @@ void handleRoot() {
   deliveredHTML.replace("%energyStub%", (String)energyStub);
 
   // Assume $0.16/kWh
-  deliveredHTML.replace("%costStub%", (String)(energyStub*.16));
+  deliveredHTML.replace("%costStub%", (String)(energyStub * costOfEnergy));
   server.send(200, "text/html", deliveredHTML);
 }
 
@@ -170,4 +176,17 @@ void off() {
 
 void status() {
   server.send(200, "text/html", (String)digitalRead(RELAY_PIN));
+}
+
+void powerStatus() {
+  String statusOf = server.arg("statusOf");
+  if ( statusOf == "voltageV" ) { server.send(200, "text/html", (String)theCSE7766.getVoltage()); }
+  else if ( statusOf == "currentA" ) { server.send(200, "text/html", (String)theCSE7766.getCurrent()); }
+  else if ( statusOf == "activePowerW" ) { server.send(200, "text/html", (String)theCSE7766.getActivePower()); }
+  else if ( statusOf == "apparentPowerVA" ) { server.send(200, "text/html", (String)theCSE7766.getApparentPower()); }
+  else if ( statusOf == "reactivePowerVAR" ) { server.send(200, "text/html", (String)theCSE7766.getReactivePower()); }
+  else if ( statusOf == "powerFactorPC" ) { server.send(200, "text/html", (String)theCSE7766.getPowerFactor()); }
+  else if ( statusOf == "energyKWH" ) { server.send(200, "text/html", (String)(theCSE7766.getEnergy()/3600000)); }
+  else if ( statusOf == "cost" ) { server.send(200, "text/html", (String)(costOfEnergy * (theCSE7766.getEnergy()/3600000))); }
+  else { handleNotFound(); }
 }
