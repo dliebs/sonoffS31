@@ -1,21 +1,19 @@
 //
 //
-//  Sonoff S31 Firmware - Version 1.0.8
-//  Based on espHTTPServer
-//  This version was not deployed [2024.01.17]
+//  Sonoff S31 Firmware - Version 1.1.0
+//    This version was deployed 2024.02.02
 //
 //  Sonoff S31 Generic ESP8266 Module Based
 //    Power Monitoring + Reporting
 //
 //  Changes From Previous Version
-//    Comments, cleanup
-//    /powerStatus page
+//    Transitioned to <espHTTPServer.h>
 //
 //
 
 #include <espHTTPUtils.h>
 #include <espWiFiUtils.h>
-#include "espHTTPServerUtils.h"
+#include <espHTTPServer.h>
 
 #include <CSE7766.h>
 CSE7766 theCSE7766;
@@ -27,33 +25,36 @@ CSE7766 theCSE7766;
 #define STASSID "Your-WiFi-SSID"  // SSID
 #define STAPSK  "Your-WiFi-Pass"  // Password
 #endif
-
 #define WiFiHostname "S31A"
 
-// Define BASICPAGE or TABBEDPAGE
-#define BASICPAGE
-
-// Webpage Hex Colors
+// Webpage User Settings
 #define BGCOLOR "000"
 #define TABBGCOLOR "111"
 #define BUTTONCOLOR "222"
 #define TEXTCOLOR "a40"
 #define FONT "Helvetica"
 #define TABHEIGHTEM "47"
+#define REFRESHPAGE true
+#define PORT 80
+
+// espHTTPServer Object
+espHTTPServer httpServer( WiFiHostname, BGCOLOR, TABBGCOLOR, BUTTONCOLOR, TEXTCOLOR, FONT, TABHEIGHTEM, REFRESHPAGE, PORT );
 
 // Cost of energy - $0.16/kWh
 float costOfEnergy = 0.16;
 
-/*-------- Program Variables ----------*/
+// Toggle for ISR
+bool buttonState = false;
 
-// GPIO - DO NOT CHANGE
+
+/*--------     GPIO - DO NOT CHANGE    ----------*/
+
 #define RELAY_PIN       12
 #define LED             13
 #define BUTTON           0
 #define CSE7766TX        1
 #define CSE7766RX        3
 
-bool buttonState = false;
 
 /*-------- Main Functions ----------*/
 
@@ -92,7 +93,7 @@ void loop() {
   }
 
   // Webserver
-  server.handleClient();
+  httpServer.server.handleClient();
 
   //Arduino OTA
   ArduinoOTA.handle();
@@ -101,28 +102,72 @@ void loop() {
   yield();
 }
 
+
 /*-------- Button Interrupt ----------*/
 
 ICACHE_RAM_ATTR void buttonISR() {
   buttonState = !buttonState;
 }
 
-/*-------- Server Calls ----------*/
+
+/*--------    Server Functions    --------*/
+
+void toggle() {
+  digitalWrite(RELAY_PIN, !digitalRead(RELAY_PIN));
+  httpServer.redirect();
+}
+
+void on() {
+  digitalWrite(RELAY_PIN, HIGH);
+  httpServer.redirect();
+}
+
+void off() {
+  digitalWrite(RELAY_PIN, LOW);
+  httpServer.redirect();
+}
+
+void setCost() {
+  costOfEnergy = httpServer.server.arg("cost").toFloat();
+  httpServer.redirect();
+}
+
+void status() {
+  String statusOf = httpServer.server.arg("of");
+  if ( statusOf == "state" ) { httpServer.server.send(200, "text/html", (String)digitalRead(RELAY_PIN)); }
+  else if ( statusOf == "voltageV" ) { httpServer.server.send(200, "text/html", (String)theCSE7766.getVoltage()); }
+  else if ( statusOf == "currentA" ) { httpServer.server.send(200, "text/html", (String)theCSE7766.getCurrent()); }
+  else if ( statusOf == "activePowerW" ) { httpServer.server.send(200, "text/html", (String)theCSE7766.getActivePower()); }
+  else if ( statusOf == "apparentPowerVA" ) { httpServer.server.send(200, "text/html", (String)theCSE7766.getApparentPower()); }
+  else if ( statusOf == "reactivePowerVAR" ) { httpServer.server.send(200, "text/html", (String)theCSE7766.getReactivePower()); }
+  else if ( statusOf == "powerFactorPC" ) { httpServer.server.send(200, "text/html", (String)theCSE7766.getPowerFactor()); }
+  else if ( statusOf == "energyWs" ) { httpServer.server.send(200, "text/html", (String)(theCSE7766.getEnergy())); }
+  else if ( statusOf == "energyKWH" ) { httpServer.server.send(200, "text/html", (String)(theCSE7766.getEnergy()/3600000)); }
+  else if ( statusOf == "cost" ) { httpServer.server.send(200, "text/html", (String)(costOfEnergy * (theCSE7766.getEnergy()/3600000))); }
+  else { handleNotFound(); }
+}
+
+
+/*--------     HTTP Server     ----------*/
 
 void serverSetup() {
-  server.on("/", handleRoot);
-  server.on("/toggle", HTTP_GET, toggle);
-  server.on("/on", HTTP_GET, on);
-  server.on("/off", HTTP_GET, off);
-  server.on("/status", HTTP_GET, status);
-  server.on("/powerStatus", HTTP_GET, powerStatus);
-  server.onNotFound(handleNotFound);
-  server.begin();
+  httpServer.server.on("/", handleRoot);
+  httpServer.server.on("/toggle", HTTP_GET, toggle);
+  httpServer.server.on("/on", HTTP_GET, on);
+  httpServer.server.on("/off", HTTP_GET, off);
+  httpServer.server.on("/setCost", HTTP_GET, setCost);
+  httpServer.server.on("/status", HTTP_GET, status);
+  httpServer.server.onNotFound(handleNotFound);
+  httpServer.server.begin();
 }
 
 String body = "<div class=\"container\">\n"
                 "<div class=\"centered-element\">\n"
                   "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"simpleButton\" style=\"width: 100%;\"></form>\n"
+                  "<form action=\"/setCost\" style=\"display: flex;\" method=\"GET\">\n"
+                    "<input type=\"text\" class=\"textInput\" name=\"cost\" value=\"%costOfEnergyStub%\" style=\"width: 65%;\">\n"
+                    "<input type=\"submit\" class=\"textInput\" style=\"width: 35%;\" value=\"$/kWh\">\n"
+                  "</form>\n"
                   "<p align=\"center\">Voltage: %voltageStub% V<br>\n"
                   "Current: %currentStub% A<br>\n"
                   "Active Power: %apowerStub% W<br>\n"
@@ -135,7 +180,7 @@ String body = "<div class=\"container\">\n"
               "</div>\n";
 
 void handleRoot() {
-  String deliveredHTML = assembleHTML(body);
+  String deliveredHTML = httpServer.assembleHTML(body);
 
   if (digitalRead(RELAY_PIN) == HIGH) { deliveredHTML.replace("%toggleStub%", "Off"); }
                                  else { deliveredHTML.replace("%toggleStub%", "On"); }
@@ -154,39 +199,14 @@ void handleRoot() {
   float energyStub = theCSE7766.getEnergy()/3600000;
   deliveredHTML.replace("%energyStub%", (String)energyStub);
 
-  // Assume $0.16/kWh
+  // Energy Costs
+  deliveredHTML.replace("%costOfEnergyStub%", (String)costOfEnergy);
   deliveredHTML.replace("%costStub%", (String)(energyStub * costOfEnergy));
-  server.send(200, "text/html", deliveredHTML);
+
+  httpServer.server.send(200, "text/html", deliveredHTML);
 }
 
-void toggle() {
-  digitalWrite(RELAY_PIN, !digitalRead(RELAY_PIN));
-  redirect();
-}
-
-void on() {
-  digitalWrite(RELAY_PIN, HIGH);
-  redirect();
-}
-
-void off() {
-  digitalWrite(RELAY_PIN, LOW);
-  redirect();
-}
-
-void status() {
-  server.send(200, "text/html", (String)digitalRead(RELAY_PIN));
-}
-
-void powerStatus() {
-  String statusOf = server.arg("statusOf");
-  if ( statusOf == "voltageV" ) { server.send(200, "text/html", (String)theCSE7766.getVoltage()); }
-  else if ( statusOf == "currentA" ) { server.send(200, "text/html", (String)theCSE7766.getCurrent()); }
-  else if ( statusOf == "activePowerW" ) { server.send(200, "text/html", (String)theCSE7766.getActivePower()); }
-  else if ( statusOf == "apparentPowerVA" ) { server.send(200, "text/html", (String)theCSE7766.getApparentPower()); }
-  else if ( statusOf == "reactivePowerVAR" ) { server.send(200, "text/html", (String)theCSE7766.getReactivePower()); }
-  else if ( statusOf == "powerFactorPC" ) { server.send(200, "text/html", (String)theCSE7766.getPowerFactor()); }
-  else if ( statusOf == "energyKWH" ) { server.send(200, "text/html", (String)(theCSE7766.getEnergy()/3600000)); }
-  else if ( statusOf == "cost" ) { server.send(200, "text/html", (String)(costOfEnergy * (theCSE7766.getEnergy()/3600000))); }
-  else { handleNotFound(); }
+// Simple call back to espHTTPServer object for reasons
+void handleNotFound() {
+  httpServer.handleNotFound();
 }
