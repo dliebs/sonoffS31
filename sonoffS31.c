@@ -14,12 +14,6 @@
 
 #define WiFiHostname "S31"
 
-// GPIO
-#define RELAY_PIN       12
-#define LED             13
-#define BUTTON			 0
-#define CSE7766TX		 1
-#define CSE7766RX		 3
 
 /*-------- Program Variables ----------*/
 
@@ -37,13 +31,10 @@ void setup() {
   Serial.print("HTTP server starting... ");
   serverSetup();
   Serial.println("Done.");
-  
+
   // Close the relay to switch on the load
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);
-  // Initialise digital pin LED_SONOFF as an output.
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void loop() {
@@ -80,7 +71,7 @@ void connectWiFi() {
 
 void serverSetup() {
   server.on("/", handleRoot);
-  server.on("/toggle", HTTP_POST, toggle);
+  server.on("/toggle", HTTP_GET, toggle);
   server.onNotFound(handleNotFound);
   server.begin();
 }
@@ -99,20 +90,21 @@ String webpage =   ""
                    "</style>"
                    "</head>"
                    "<body>"
-                   "<form action=\"/toggle\" method=\"POST\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
+                   "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
+                   "<a href=\"http://192.168.1.139/toggle\">Link</a>"
                    "</body>"
                    "</html>";
 
 void handleRoot() {
   String deliveredHTML = webpage;
-  
-  if (digitalRead(RELAY_PIN) == HIGH) {
-    deliveredHTML.replace("%toggleStub%", "Off");
-  }
-  else {
+
+  if (digitalRead(LED_BUILTIN) == HIGH) {
     deliveredHTML.replace("%toggleStub%", "On");
   }
-  
+  else {
+    deliveredHTML.replace("%toggleStub%", "Off");
+  }
+
   server.send(200, "text/html", deliveredHTML);
 }
 
@@ -133,8 +125,7 @@ void handleNotFound() {
 
 void toggle() {
   // Close the relay to switch on the load
-  digitalWrite(RELAY_PIN, !digitalRead(RELAY_PIN));
-  digitalWrite(LED, !digitalRead(LED));
+  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   redirect();
 }
 
