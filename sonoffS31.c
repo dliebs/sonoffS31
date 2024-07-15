@@ -1,10 +1,11 @@
 //
-// Custom Sonoff S31 Firmware v6
+// Custom Sonoff S31 Firmware v7
+//  Cost estimates, usage in kWh
 //
-// Changes from v5
-//   Added cost estimates, changed to kWh
+// Changes from v6
+//   Added /status for feedback
 //
-// This version HNBD
+// This version deployed 2024.01.17
 //
 // Credit to:
 // https://github.com/dervomsee/CSE7766
@@ -12,9 +13,9 @@
 
 #include <espHTTPUtils.h>
 #include <espWiFiUtils.h>
-#include <CSE7766.h>
 #include "espHTTPServerUtils.h"
 
+#include <CSE7766.h>
 CSE7766 theCSE7766;
 
 /*-------- User-Defined Variables ----------*/
@@ -108,13 +109,14 @@ void serverSetup() {
   server.on("/toggle", HTTP_GET, toggle);
   server.on("/on", HTTP_GET, on);
   server.on("/off", HTTP_GET, off);
+  server.on("/status", HTTP_GET, status);
   server.onNotFound(handleNotFound);
   server.begin();
 }
 
 String body = "<div class=\"container\">\n"
                 "<div class=\"centered-element\">\n"
-                  "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"simpleButton\"></form>\n"
+                  "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"simpleButton\" style=\"width: 100%;\"></form>\n"
                   "<p align=\"center\">Voltage: %voltageStub% V<br>\n"
                   "Current: %currentStub% A<br>\n"
                   "Active Power: %apowerStub% W<br>\n"
@@ -164,4 +166,8 @@ void on() {
 void off() {
   digitalWrite(RELAY_PIN, LOW);
   redirect();
+}
+
+void status() {
+  server.send(200, "text/html", (String)digitalRead(RELAY_PIN));
 }
