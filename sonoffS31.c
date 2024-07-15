@@ -1,20 +1,19 @@
-/*-----     Custom Sonoff S31 Firmware v1b     -----*/
+/*-----     Custom Sonoff S31 Firmware v2b     -----*/
 /*-----              Slave Device              -----*/
 /*-----  https://github.com/dervomsee/CSE7766  -----*/
 
 /*-----
 To Do:
-  OTA Update
-  15 Amp Shutoff
-  Button Toggle
   NTP
   Scheduler
-  Auto Refresh Webpage
 -----*/
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <CSE7766.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 
 CSE7766 theCSE7766;
 
@@ -48,12 +47,16 @@ void setup() {
   theCSE7766.setRX(1);
   theCSE7766.begin(); // will initialize serial to 4800 bps
 
-  // Bring relay pin HIGH to turn on load
+  // Bring relay pin LOW to turn off load
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
-  //  Bring LED HIGH to turn off
+  // Bring LED pin LOW to turn on
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
+
+  // Activate the button as an interrupt - CAUSES ESP TO FAIL BOOT
+ //  pinMode(BUTTON, INPUT_PULLUP);
+ // attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPressed, RISING);
 
   // Connect to WiFi
   connectWiFi();
@@ -62,14 +65,66 @@ void setup() {
   Serial.print("HTTP server starting... ");
   serverSetup();
   Serial.println("Done.");
+
+  //Initialize Arduino OTA
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_FS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    Serial.println("Start updating " + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+  ArduinoOTA.setHostname(WiFiHostname);
+  ArduinoOTA.setPassword(STAPSK);
+
+  ArduinoOTA.begin();
 }
 
 void loop() {
+  // Safety Shutoff at 15A
+  theCSE7766.handle();
+  if (theCSE7766.getCurrent() > 15) {
+  	digitalWrite(RELAY_PIN, LOW);
+  }
+
   // Webserver
   server.handleClient();
 
+  //Arduino OTA
+  ArduinoOTA.handle();
+
   // Let the ESP8266 do its thing
   yield();
+}
+
+/*-------- Button Interrupt ----------*/
+
+void buttonPressed() {
+  toggle();
 }
 
 /*-------- WiFi Code ----------*/
@@ -101,6 +156,8 @@ void connectWiFi() {
 void serverSetup() {
   server.on("/", handleRoot);
   server.on("/toggle", HTTP_GET, toggle);
+  server.on("/turnOn", HTTP_GET, turnOn);
+  server.on("/turnOff", HTTP_GET, turnOff);
   server.onNotFound(handleNotFound);
   server.begin();
 }
@@ -112,10 +169,10 @@ String webpage =   ""
                    "<title>Sonoff S31 B</title>"
                    "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
                    "<meta name=\"viewport\" content=\"width=device-width\" />"
+                   "<meta http-equiv=\"refresh\" content=\"10\" />"
                    "<style>"
                    "body {background-color: #000; color: #a40; font-family: Helvetica;}"
                    "input.colorButton { width: 100%; height: 2.5em; padding: 0; font-size: 2em; background-color: #222; border-color: #222; color: #a40; font-family: Helvetica;} "
-                   "input[type=range] { outline: 0; -webkit-appearance: none; width: 100%; height: 2.5em; margin: 0; background: linear-gradient(to right, #f00 0%, #ff8000 8.3%, #ff0 16.6%, #80ff00 25%, #0f0 33.3%, #00ff80 41.6%, #0ff 50%, #007fff 58.3%, #00f 66.6%, #7f00ff 75%, #f0f 83.3%, #ff0080 91.6%, #f00 100%); }"
                    "</style>"
                    "</head>"
                    "<body>"
@@ -169,9 +226,17 @@ void handleNotFound() {
 }
 
 void toggle() {
-  // Close the relay to switch on the load
   digitalWrite(RELAY_PIN, !digitalRead(RELAY_PIN));
-  //digitalWrite(LED, !digitalRead(LED));
+  redirect();
+}
+
+void turnOn() {
+  digitalWrite(RELAY_PIN, HIGH);
+  redirect();
+}
+
+void turnOff() {
+  digitalWrite(RELAY_PIN, LOW);
   redirect();
 }
 
