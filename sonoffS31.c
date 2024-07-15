@@ -2,9 +2,19 @@
 /*-----              Slave Device              -----*/
 /*-----  https://github.com/dervomsee/CSE7766  -----*/
 
+/*-----
+To Do:
+  OTA Update
+  15 Amp Shutoff
+  Button Toggle
+  NTP
+  Scheduler
+  Auto Refresh Webpage
+-----*/
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-#include "CSE7766.h"
+#include <CSE7766.h>
 
 CSE7766 theCSE7766;
 
