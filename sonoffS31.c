@@ -1,22 +1,19 @@
 //
-// Custom Sonoff S31 Firmware v5
+// Custom Sonoff S31 Firmware v6
 //
-// Changes from v4
-//   Arduino OTA in separate function
-//   Center Text on Webpage
+// Changes from v5
+//   Added cost estimates, changed to kWh
 //
-// This version was deployed 2023.04.18
+// This version HNBD
 //
 // Credit to:
 // https://github.com/dervomsee/CSE7766
 //
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
+#include <espHTTPUtils.h>
+#include <espWiFiUtils.h>
 #include <CSE7766.h>
-#include <ESP8266mDNS.h>
-#include <WiFiUdp.h>
-#include <ArduinoOTA.h>
+#include "espHTTPServerUtils.h"
 
 CSE7766 theCSE7766;
 
@@ -28,7 +25,18 @@ CSE7766 theCSE7766;
 #define STAPSK  "Your-WiFi-Pass"  // Password
 #endif
 
-#define WiFiHostname "S31B"
+#define WiFiHostname "S31A"
+
+// Define BASICPAGE or TABBEDPAGE
+#define BASICPAGE
+
+// Webpage Hex Colors
+#define BGCOLOR "000"
+#define TABBGCOLOR "111"
+#define BUTTONCOLOR "222"
+#define TEXTCOLOR "a40"
+#define FONT "Helvetica"
+#define TABHEIGHTEM "47"
 
 /*-------- Program Variables ----------*/
 
@@ -39,9 +47,6 @@ CSE7766 theCSE7766;
 #define CSE7766TX        1
 #define CSE7766RX        3
 
-const char * ssid = STASSID;
-const char * pass = STAPSK;
-ESP8266WebServer server(80);
 bool buttonState = false;
 
 /*-------- Main Functions ----------*/
@@ -55,22 +60,16 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
 
-  // Bring LED pin LOW to turn on
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);
-
   // Activate the button as an interrupt - ESP WILL FAIL BOOT IF SET TO INPUT_PULLUP
   pinMode(BUTTON, INPUT);
-  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonWatcher, HIGH);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, HIGH);
 
-  // Connect to WiFi
-  connectWiFi();
+  // Connect to WiFi, start OTA
+  connectWiFi(STASSID, STAPSK, WiFiHostname, LED);
+  initializeOTA(WiFiHostname, STAPSK);
 
   // Start HTML Server
   serverSetup();
-
-  //Initialize Arduino OTA
-  initializeOTA();
 }
 
 void loop() {
@@ -98,61 +97,8 @@ void loop() {
 
 /*-------- Button Interrupt ----------*/
 
-ICACHE_RAM_ATTR void buttonWatcher() {
+ICACHE_RAM_ATTR void buttonISR() {
   buttonState = !buttonState;
-}
-
-/*-------- WiFi Code ----------*/
-
-void connectWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.hostname(WiFiHostname);
-  WiFi.begin(ssid, pass);
-
-  unsigned long startTime = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - startTime) <= 10000) // Timeout WiFi connection attempt after 10 sec
-  {
-    delay(500);
-    digitalWrite(LED, !digitalRead(LED));
-  }
-  digitalWrite(LED, HIGH);
-}
-
-void initializeOTA() {
-  //Initialize Arduino OTA
-  ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    } else { // U_FS
-      type = "filesystem";
-    }
-    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-    Serial.println("Start updating " + type);
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
-  });
-  ArduinoOTA.setHostname(WiFiHostname);
-  ArduinoOTA.setPassword(STAPSK);
-  ArduinoOTA.begin();
 }
 
 /*-------- Server Calls ----------*/
@@ -160,55 +106,31 @@ void initializeOTA() {
 void serverSetup() {
   server.on("/", handleRoot);
   server.on("/toggle", HTTP_GET, toggle);
-  server.on("/turnOn", HTTP_GET, turnOn);
-  server.on("/turnOff", HTTP_GET, turnOff);
+  server.on("/on", HTTP_GET, on);
+  server.on("/off", HTTP_GET, off);
   server.onNotFound(handleNotFound);
   server.begin();
 }
 
-String webpage = ""
-                 "<!DOCTYPE html>"
-                 "<html>"
-                 "<head>"
-                   "<title>Sonoff %deviceName%</title>"
-                   "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
-                   "<meta name=\"viewport\" content=\"width=device-width\" />"
-                   "<meta http-equiv=\"refresh\" content=\"10\" />"
-                   "<style>"
-                     "body {background-color: #000; color: #a40; font-family: Helvetica;}"
-                     "p { font-size: 1.25em; }"
-                     "input.colorButton { width: 100%; height: 2.5em; padding: 0; font-size: 2em; background-color: #222; border-color: #222; color: #a40; font-family: Helvetica;} "
-                     ".container { display: flex; align-items: center; justify-content: center; height: 100%; border: 0px; }"
-                     ".centered-element { margin: 0; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95%; }"
-                   "</style>"
-                 "</head>"
-                 "<body>"
-                   "<div class=\"container\">"
-                     "<div class=\"centered-element\">"
-                       "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"colorButton\"></form>"
-                       "<p align=\"center\">Voltage: %voltageStub% V<br>"
-                       "Current: %currentStub% A<br>"
-                       "Active Power: %apowerStub% W<br>"
-                       "Apparent Power: %appowerStub% VA<br>"
-                       "Reactive Power: %rpowerStub% VAR<br>"
-                       "Power Factor: %pfactorStub% %<br>"
-                       "Energy: %energyStub% Ws</p>"
-                     "</div>"
-                   "</div>"
-                 "</body>"
-                 "</html>";
+String body = "<div class=\"container\">\n"
+                "<div class=\"centered-element\">\n"
+                  "<form action=\"/toggle\" method=\"GET\"><input type=\"submit\" value=\"Turn %toggleStub%\" class=\"simpleButton\"></form>\n"
+                  "<p align=\"center\">Voltage: %voltageStub% V<br>\n"
+                  "Current: %currentStub% A<br>\n"
+                  "Active Power: %apowerStub% W<br>\n"
+                  "Apparent Power: %appowerStub% VA<br>\n"
+                  "Reactive Power: %rpowerStub% VAR<br>\n"
+                  "Power Factor: %pfactorStub% %<br>\n"
+                  "Energy: %energyStub% kWh<br>\n"
+                  "Cost: &#36;%costStub%</p>\n"
+                "</div>\n"
+              "</div>\n";
 
 void handleRoot() {
-  String deliveredHTML = webpage;
+  String deliveredHTML = assembleHTML(body);
 
-  deliveredHTML.replace("%deviceName%", WiFiHostname);
-
-  if (digitalRead(RELAY_PIN) == HIGH) {
-    deliveredHTML.replace("%toggleStub%", "Off");
-  }
-  else {
-    deliveredHTML.replace("%toggleStub%", "On");
-  }
+  if (digitalRead(RELAY_PIN) == HIGH) { deliveredHTML.replace("%toggleStub%", "Off"); }
+                                 else { deliveredHTML.replace("%toggleStub%", "On"); }
 
   // Read the CSE7766
   theCSE7766.handle();
@@ -219,23 +141,14 @@ void handleRoot() {
   deliveredHTML.replace("%appowerStub%", (String)theCSE7766.getApparentPower());
   deliveredHTML.replace("%rpowerStub%", (String)theCSE7766.getReactivePower());
   deliveredHTML.replace("%pfactorStub%", (String)theCSE7766.getPowerFactor());
-  deliveredHTML.replace("%energyStub%", (String)theCSE7766.getEnergy());
-  server.send(200, "text/html", deliveredHTML);
-}
 
-void handleNotFound() {
-  String message = "File Not Found\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET) ? "GET" : "POST";
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
-  for (uint8_t i = 0; i < server.args(); i++) {
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-  }
-  server.send(404, "text/plain", message);
+  // Convert Watt-hours to kWh
+  float energyStub = theCSE7766.getEnergy()/3600000;
+  deliveredHTML.replace("%energyStub%", (String)energyStub);
+
+  // Assume $0.16/kWh
+  deliveredHTML.replace("%costStub%", (String)(energyStub*.16));
+  server.send(200, "text/html", deliveredHTML);
 }
 
 void toggle() {
@@ -243,18 +156,12 @@ void toggle() {
   redirect();
 }
 
-void turnOn() {
+void on() {
   digitalWrite(RELAY_PIN, HIGH);
   redirect();
 }
 
-void turnOff() {
+void off() {
   digitalWrite(RELAY_PIN, LOW);
   redirect();
-}
-
-void redirect() {
-  yield();
-  server.sendHeader("Location", "/");
-  server.send(303);
 }
